@@ -680,3 +680,55 @@ class SoupStrainer(ElementFilter):
         :meta private:
         """
         return element if self.match(element) else None
+
+
+class SoupReplacer(object):
+    """Renames tags *while* a document is being parsed.
+
+    A `SoupReplacer` is passed to the `BeautifulSoup` constructor as
+    ``replacer``, much like a `SoupStrainer` is passed as
+    ``parse_only``. Every tag named `og_tag` is created with the name
+    `alt_tag` instead, so there is no need to walk the finished tree
+    to rename it::
+
+        b_to_blockquote = SoupReplacer("b", "blockquote")
+        soup = BeautifulSoup(html_doc, "html.parser", replacer=b_to_blockquote)
+
+    Only the tag name changes; attributes and contents are kept. The
+    tag name must match exactly (HTML parsers lower-case tag names).
+    A `SoupStrainer` given as ``parse_only`` sees the original name.
+
+    The html5lib tree builder builds its tree without calling
+    `BeautifulSoup.handle_starttag`, so it does not support a replacer.
+
+    :param og_tag: The name of the tags to replace.
+    :param alt_tag: The name to give those tags instead.
+    """
+
+    og_tag: str
+    alt_tag: str
+
+    def __init__(self, og_tag: str, alt_tag: str):
+        for value in (og_tag, alt_tag):
+            if not isinstance(value, str):
+                raise TypeError(
+                    f"SoupReplacer tag names must be strings, not {type(value).__name__}."
+                )
+            if not value:
+                raise ValueError("SoupReplacer tag names must not be empty.")
+        self.og_tag = og_tag
+        self.alt_tag = alt_tag
+
+    def replace(self, name: str) -> str:
+        """Return the name a tag found in the document as `name` should
+        have in the parse tree.
+
+        :param name: The tag name as reported by the parser.
+        :return: `alt_tag` if `name` is `og_tag`; otherwise `name`.
+        """
+        if name == self.og_tag:
+            return self.alt_tag
+        return name
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} {self.og_tag!r} -> {self.alt_tag!r}>"

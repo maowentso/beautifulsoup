@@ -33,6 +33,7 @@ __all__ = [
     "Tag",
     "TemplateString",
     "ElementFilter",
+    "SoupReplacer",
     "UnicodeDammit",
     "CData",
     "Doctype",
@@ -90,6 +91,7 @@ from .element import (
 from .formatter import Formatter
 from .filter import (
     ElementFilter,
+    SoupReplacer,
     SoupStrainer,
 )
 from typing import (
@@ -181,6 +183,11 @@ class BeautifulSoup(Tag):
     known_xml: Optional[bool]
     parse_only: Optional[SoupStrainer]  #: :meta private:
 
+    # This needs a class-level default: BeautifulSoup is a Tag, and
+    # Tag.__getattr__ would treat a missing "replacer" attribute as a
+    # search for a child tag called <replacer>.
+    replacer: Optional[SoupReplacer] = None  #: :meta private:
+
     # These members are only used while parsing markup.
     markup: Optional[_RawMarkup]  #: :meta private:
     current_data: List[str]  #: :meta private:
@@ -215,6 +222,7 @@ class BeautifulSoup(Tag):
         from_encoding: Optional[_Encoding] = None,
         exclude_encodings: Optional[_Encodings] = None,
         element_classes: Optional[Dict[Type[PageElement], Type[PageElement]]] = None,
+        replacer: Optional[SoupReplacer] = None,
         **kwargs: Any,
     ):
         """Constructor.
@@ -254,6 +262,10 @@ class BeautifulSoup(Tag):
          like to be instantiated instead as the parse tree is
          built. This is useful for subclassing Tag or NavigableString
          to modify default behavior.
+
+        :param replacer: A SoupReplacer. Tags it matches are given
+         their new name while the document is being parsed, so the
+         finished tree never contains the original name.
 
         :param kwargs: For backwards compatibility purposes, the
          constructor accepts certain keyword arguments used in
@@ -435,6 +447,19 @@ class BeautifulSoup(Tag):
         self.known_xml = self.is_xml
         self._namespaces = dict()
         self.parse_only = parse_only
+
+        if replacer is not None:
+            if not isinstance(replacer, SoupReplacer):
+                raise TypeError(
+                    f"replacer must be a SoupReplacer, not {type(replacer).__name__}."
+                )
+            if builder.NAME == "html5lib":
+                warnings.warn(
+                    "The html5lib tree builder does not support a SoupReplacer; no tags will be replaced.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        self.replacer = replacer
 
         if hasattr(markup, "read"):  # It's a file-type object.
             markup = markup.read()
@@ -1025,6 +1050,11 @@ class BeautifulSoup(Tag):
         ):
             return None
 
+        # Rename the tag before it is created. This comes after the
+        # parse_only check, so a SoupStrainer sees the original name.
+        if self.replacer is not None:
+            name = self.replacer.replace(name)
+
         tag_class = self.element_classes.get(Tag, Tag)
         # Assume that this is either Tag or a subclass of Tag. If not,
         # the user brought type-unsafety upon themselves.
@@ -1060,6 +1090,10 @@ class BeautifulSoup(Tag):
         """
         # print("End tag: " + name)
         self.endData()
+        # The start tag was renamed in handle_starttag, so the end tag
+        # must be renamed too, or _popToTag will not find it.
+        if self.replacer is not None:
+            name = self.replacer.replace(name)
         self._popToTag(name, nsprefix)
 
     def handle_data(self, data: str) -> None:

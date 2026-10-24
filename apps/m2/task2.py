@@ -1,11 +1,3 @@
-"""Milestone 1 task 2 (print every hyperlink) using SoupStrainer.
-
-Usage: python task2.py <file.html|file.xml>
-
-SoupStrainer("a") makes BeautifulSoup create objects only for <a> tags and
-what is inside them; every other tag and all text outside a link is skipped
-while parsing.
-"""
 from _common import get_input
 from bs4 import BeautifulSoup, SoupStrainer
 

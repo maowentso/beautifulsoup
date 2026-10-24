@@ -1,11 +1,3 @@
-"""Milestone 1 task 4 (print every tag that has an id) using SoupStrainer.
-
-Usage: python task4.py <file.html|file.xml>
-
-SoupStrainer(id=True) lets a tag be created only if it has an id attribute.
-A tag with an id is kept with everything inside it, so tags with an id
-nested in it are still found by find_all(id=True).
-"""
 from _common import get_input
 from bs4 import BeautifulSoup, SoupStrainer
 

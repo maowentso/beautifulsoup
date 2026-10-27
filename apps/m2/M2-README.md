@@ -1,24 +1,16 @@
 # Milestone-2
 
-BeautifulSoup version in `beautifulsoup.zip`: **4.13.0**. The first commit of this repository is the
-untouched source from the zip; all Milestone 2 changes come after it.
-
-| file | part | what it is |
+| file |  | what it is |
 |---|---|---|
-| `apps/m2/task2.py`, `task3.py`, `task4.py` | 1 | Milestone 1 tasks 2, 3, 4 using `SoupStrainer` |
-| `apps/m2/task6.py` | 3 | Milestone 1 task 6 using `SoupReplacer` |
-| `apps/m2/make_large_files.py` | 1, 3 | generates the large test files (`data/large.html`, `data/large.xml`) |
-| `apps/m2/benchmark.py` | 1, 3 | runs each Milestone 1 program and its Milestone 2 version, compares output, time, memory |
-| `apps/m2/milestone1/` | 1, 3 | copies of my Milestone 1 programs (unchanged), used by the benchmark |
-| `bs4/filter.py`, `bs4/__init__.py` | 3 | the new `SoupReplacer` API |
-| `bs4/tests/test_soupreplacer.py` | 3 | the 2 new test cases |
-
-All apps take the input file as their only argument. A `.xml` file is parsed with the `xml` parser, anything
-else with `html.parser` (same rule as Milestone 1). The apps put the repository root first on `sys.path`, so
-they always use the modified `bs4` in this repository, even if another version is installed.
+| `apps/m2/task2.py`, `task3.py`, `task4.py` |  | Milestone 1 tasks 2, 3, 4 using `SoupStrainer` |
+| `apps/m2/task6.py` |  | Milestone 1 task 6 using `SoupReplacer` |
+| `apps/m2/make_large_files.py` |  | generates the large test files (`data/large.html`, `data/large.xml`) |
+| `apps/m2/benchmark.py` | | runs each Milestone 1 program and its Milestone 2 version, compares output, time, memory |
+| `bs4/filter.py`, `bs4/__init__.py` |  | the new `SoupReplacer` API |
+| `bs4/tests/test_soupreplacer.py` |  | the 2 new test cases |
 
 ```bash
-python apps/m2/make_large_files.py          # writes 25 MB data/large.html and data/large.xml
+python apps/m2/make_large_files.py          # creates 25 MB data/large.html and data/large.xml
 python apps/m2/task2.py apps/m2/data/large.html
 python apps/m2/benchmark.py apps/m2/data/large.html apps/m2/data/large.xml
 pytest bs4/tests/test_soupreplacer.py
@@ -26,7 +18,7 @@ pytest bs4/tests/test_soupreplacer.py
 
 ---
 
-## Part 1 – SoupStrainer
+## SoupStrainer
 
 | program | Milestone 1 output | strainer |
 |---|---|---|
@@ -75,13 +67,7 @@ Findings:
    `handle_starttag` and `endData`). This explains both the trick in task 3 and the lack of savings in task 4.
 4. Timings vary by roughly ±10 % between runs, so only the large differences above are meaningful.
 
----
-
-## Part 2 – Where the API functions are defined
-
-All file names and line numbers refer to the **original source from `beautifulsoup.zip`, before any change**
-(the first commit of this repository; check with `git show <first-commit>:bs4/element.py`). Each number is the
-line of the `def` / `class` statement or of the assignment that defines the name.
+## Where the API functions are defined
 
 ### Milestone 1
 
@@ -111,11 +97,11 @@ line of the `def` / `class` statement or of the assignment that defines the name
 | who calls `handle_starttag` | `BeautifulSoupHTMLParser.handle_starttag` `bs4/builder/_htmlparser.py:142` (call at `:182`) for `html.parser`; `LXMLTreeBuilderForXML.start` `bs4/builder/_lxml.py:312` for `xml` / `lxml` |
 | `find_all`, `get`, `get_text`, `name`, `tag["id"]` on the strained tree | same as in the Milestone 1 table |
 
-`SoupReplacer` (Part 3) is new, so it has no line in the original source.
 
 ---
 
-## Part 3 – SoupReplacer
+
+## SoupReplacer
 
 ```python
 from bs4 import BeautifulSoup, SoupReplacer
@@ -138,7 +124,7 @@ print(BeautifulSoup(html_doc, "html.parser", replacer=b_to_blockquote).prettify(
 
 `handle_starttag` and `handle_endtag` are where the `html.parser`, `lxml` and `lxml-xml` builders all report tags, so
 this one change covers all three. Because the `Tag` is created with the new name, the builder's per-tag rules follow
-the new name too (for example, `class` stays a multi-valued attribute).
+the new name too.
 
 Limits: names must match exactly (HTML parsers lower-case tag names, so use `"b"`). Only the name changes, not
 attributes or contents. `html5lib` builds its own tree without calling `handle_starttag`, so it ignores the replacer and
@@ -154,12 +140,11 @@ gives a warning.
    not touched, and a replacer that matches nothing changes nothing. It works together with `parse_only`. Badly nested
    markup gives the same tree as renaming afterwards. Bad arguments raise `ValueError` / `TypeError`.
 
-Full test suite: 729 passed, 107 skipped before the change; 732 passed, 107 skipped after it (the 2 new test cases,
-one run for 2 parsers). Nothing that passed before fails now.
+Full test: 729 passed, 107 skipped before the change; 732 passed, 107 skipped after it. Nothing that passed before fails now.
 
 ### Task 6 application
 
 `python apps/m2/task6.py apps/m2/data/large.html` writes `output_task6.html`. On the 25 MB file its output is
-byte-for-byte the same as Milestone 1's `task6.py` (see the benchmark table). The 176 `<b>` left in the output are
+byte-for-byte the same as Milestone 1's `task6.py`. The 176 `<b>` left in the output are
 text inside `<script>` elements, not tags, exactly as in Milestone 1. The time is about the same as Milestone 1: the
 `find_all("b")` pass that `SoupReplacer` avoids is small compared to parsing and writing 25 MB.

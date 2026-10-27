@@ -86,7 +86,7 @@ Findings:
 | `soup.select("script, style")` | 8 | `Tag.select` `bs4/element.py:2799` → `Tag.css` `bs4/element.py:2825` → `CSS.select` `bs4/css.py:161` (which calls the external `soupsieve` package) |
 | `tag.decompose()` | 8 | `PageElement.decompose` `bs4/element.py:635` |
 
-### Milestone 2, Part 1
+### Milestone 2
 
 | API used | defined at |
 |---|---|

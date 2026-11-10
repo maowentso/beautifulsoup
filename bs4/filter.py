@@ -683,52 +683,147 @@ class SoupStrainer(ElementFilter):
 
 
 class SoupReplacer(object):
-    """Renames tags *while* a document is being parsed.
+    """Changes tags *while* a document is being parsed.
 
     A `SoupReplacer` is passed to the `BeautifulSoup` constructor as
     ``replacer``, much like a `SoupStrainer` is passed as
-    ``parse_only``. Every tag named `og_tag` is created with the name
-    `alt_tag` instead, so there is no need to walk the finished tree
-    to rename it::
+    ``parse_only``. The changes are made by the parser as it builds
+    the tree, so there is no need to walk the finished tree again.
+
+    There are two ways to say what should change.
+
+    1. Rename one tag to another (Milestone 2)::
 
         b_to_blockquote = SoupReplacer("b", "blockquote")
-        soup = BeautifulSoup(html_doc, "html.parser", replacer=b_to_blockquote)
 
-    Only the tag name changes; attributes and contents are kept. The
-    tag name must match exactly (HTML parsers lower-case tag names).
-    A `SoupStrainer` given as ``parse_only`` sees the original name.
+       Every tag named `og_tag` is created with the name `alt_tag`
+       instead. A `SoupStrainer` given as ``parse_only`` sees the
+       original name.
+
+    2. Transformer functions (Milestone 3). Each one is called with a
+       `Tag` that is already in the tree::
+
+        SoupReplacer(name_xformer=lambda tag: "blockquote" if tag.name == "b" else tag.name)
+        SoupReplacer(attrs_xformer=lambda tag: {**tag.attrs, "class": "test"})
+        SoupReplacer(xformer=remove_class_attr)
+
+       * `name_xformer` returns the tag's new name.
+       * `attrs_xformer` returns the tag's new attribute dictionary.
+       * `xformer` returns nothing; it may change the tag in any way.
+
+       They are called, in that order, when the parser *closes* the
+       tag, so the tag is complete: its attributes, parent and all of
+       its contents are there. Tags are therefore transformed
+       innermost first, and a transformer sees the tag's children
+       already transformed. The tag keeps its original name while it
+       is open, so the parser can still match its end tag.
+
+    Both ways can be used together; the rename happens first.
 
     The html5lib tree builder builds its tree without calling
-    `BeautifulSoup.handle_starttag`, so it does not support a replacer.
+    `BeautifulSoup.handle_starttag` and `BeautifulSoup.popTag`, so it
+    does not support a replacer.
 
-    :param og_tag: The name of the tags to replace.
+    :param og_tag: The name of the tags to rename.
     :param alt_tag: The name to give those tags instead.
+    :param name_xformer: A function that takes a `Tag` and returns its
+        new name (a non-empty string).
+    :param attrs_xformer: A function that takes a `Tag` and returns its
+        new attributes (a dictionary).
+    :param xformer: A function that takes a `Tag` and changes it in
+        place. Its return value is ignored.
     """
 
-    og_tag: str
-    alt_tag: str
+    og_tag: Optional[str]
+    alt_tag: Optional[str]
+    name_xformer: Optional[Callable[[Tag], str]]
+    attrs_xformer: Optional[Callable[[Tag], Dict[str, Any]]]
+    xformer: Optional[Callable[[Tag], None]]
 
-    def __init__(self, og_tag: str, alt_tag: str):
-        for value in (og_tag, alt_tag):
-            if not isinstance(value, str):
+    def __init__(
+        self,
+        og_tag: Optional[str] = None,
+        alt_tag: Optional[str] = None,
+        *,
+        name_xformer: Optional[Callable[[Tag], str]] = None,
+        attrs_xformer: Optional[Callable[[Tag], Dict[str, Any]]] = None,
+        xformer: Optional[Callable[[Tag], None]] = None,
+    ):
+        if (og_tag is None) != (alt_tag is None):
+            raise TypeError("SoupReplacer needs both og_tag and alt_tag, or neither.")
+        if og_tag is not None:
+            for value in (og_tag, alt_tag):
+                if not isinstance(value, str):
+                    raise TypeError(
+                        f"SoupReplacer tag names must be strings, not {type(value).__name__}."
+                    )
+                if not value:
+                    raise ValueError("SoupReplacer tag names must not be empty.")
+        for what, function in (
+            ("name_xformer", name_xformer),
+            ("attrs_xformer", attrs_xformer),
+            ("xformer", xformer),
+        ):
+            if function is not None and not callable(function):
                 raise TypeError(
-                    f"SoupReplacer tag names must be strings, not {type(value).__name__}."
+                    f"SoupReplacer {what} must be callable, not {type(function).__name__}."
                 )
-            if not value:
-                raise ValueError("SoupReplacer tag names must not be empty.")
+        if og_tag is None and not (name_xformer or attrs_xformer or xformer):
+            raise TypeError(
+                "SoupReplacer needs og_tag and alt_tag, or at least one of"
+                " name_xformer, attrs_xformer and xformer."
+            )
         self.og_tag = og_tag
         self.alt_tag = alt_tag
+        self.name_xformer = name_xformer
+        self.attrs_xformer = attrs_xformer
+        self.xformer = xformer
+
+    @property
+    def has_xformers(self) -> bool:
+        """Is there at least one transformer function to call?"""
+        return bool(self.name_xformer or self.attrs_xformer or self.xformer)
 
     def replace(self, name: str) -> str:
         """Return the name a tag found in the document as `name` should
-        have in the parse tree.
+        be created with.
 
         :param name: The tag name as reported by the parser.
         :return: `alt_tag` if `name` is `og_tag`; otherwise `name`.
         """
-        if name == self.og_tag:
-            return self.alt_tag
+        if self.og_tag is not None and name == self.og_tag:
+            return cast(str, self.alt_tag)
         return name
 
+    def transform(self, tag: Tag) -> None:
+        """Run the transformer functions on a tag that has just been
+        closed. Called by `BeautifulSoup.popTag`.
+
+        :param tag: A complete `Tag` in the tree being built.
+        """
+        if self.name_xformer is not None:
+            name = self.name_xformer(tag)
+            if not isinstance(name, str) or not name:
+                raise ValueError(
+                    f"name_xformer must return a non-empty string, not {name!r}."
+                )
+            tag.name = name
+        if self.attrs_xformer is not None:
+            attrs = self.attrs_xformer(tag)
+            if not isinstance(attrs, dict):
+                raise TypeError(
+                    f"attrs_xformer must return a dict, not {type(attrs).__name__}."
+                )
+            tag.attrs = attrs
+        if self.xformer is not None:
+            self.xformer(tag)
+
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} {self.og_tag!r} -> {self.alt_tag!r}>"
+        parts = []
+        if self.og_tag is not None:
+            parts.append(f"{self.og_tag!r} -> {self.alt_tag!r}")
+        for what in ("name_xformer", "attrs_xformer", "xformer"):
+            function = getattr(self, what)
+            if function is not None:
+                parts.append(f"{what}={getattr(function, '__name__', function)}")
+        return f"<{self.__class__.__name__} {', '.join(parts)}>"

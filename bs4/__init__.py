@@ -263,9 +263,9 @@ class BeautifulSoup(Tag):
          built. This is useful for subclassing Tag or NavigableString
          to modify default behavior.
 
-        :param replacer: A SoupReplacer. Tags it matches are given
-         their new name while the document is being parsed, so the
-         finished tree never contains the original name.
+        :param replacer: A SoupReplacer. Its renaming and transformer
+         functions are applied while the document is being parsed, so
+         the finished tree never needs a second pass.
 
         :param kwargs: For backwards compatibility purposes, the
          constructor accepts certain keyword arguments used in
@@ -829,7 +829,34 @@ class BeautifulSoup(Tag):
         # print("Pop", tag.name)
         if self.tagStack:
             self.currentTag = self.tagStack[-1]
+        if (
+            self.replacer is not None
+            and self.replacer.has_xformers
+            and tag is not self
+        ):
+            self._transform_closed_tag(tag)
         return self.currentTag
+
+    def _transform_closed_tag(self, tag: Tag) -> None:
+        """Run the SoupReplacer's transformer functions on a tag that
+        was just closed.
+
+        This happens after the tag has left the tag stack, so a new
+        name cannot confuse the matching of end tags (_popToTag) or
+        open_tag_counter, which both use the name the tag was opened
+        with.
+
+        :meta private:
+        """
+        assert self.replacer is not None
+        self.replacer.transform(tag)
+        # An xformer may have removed or replaced the tag, or added
+        # elements after it. The next parsed element must be linked
+        # after whatever is now last in the still-open parent.
+        if self.currentTag is not None:
+            self._most_recent_element = self.currentTag._last_descendant(
+                is_initialized=False
+            )
 
     def pushTag(self, tag: Tag) -> None:
         """Internal method called by handle_starttag when a tag is opened.
